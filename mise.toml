@@ -1,0 +1,24 @@
+[tools]
+rust = "latest"
+"ubi:linebender/resvg" = "latest"
+"ubi:rust-cross/cargo-zigbuild" = "latest"
+zig = "0.13"
+
+[tasks.test]
+description = "Run the unit tests"
+run = "cargo test"
+
+[tasks.build]
+description = "Release build for Linux (target/x86_64-unknown-linux-gnu/release/xenomorph)"
+run = "cargo build --release --target x86_64-unknown-linux-gnu"
+
+[tasks.build-windows]
+description = "Release build for Windows (target/x86_64-pc-windows-gnu/release/xenomorph.exe)"
+run = [
+  "rustup target add x86_64-pc-windows-gnu",
+  "cargo zigbuild --release --target x86_64-pc-windows-gnu",
+]
+
+[tasks.icon]
+description = "Render assets/icon.svg to the PNG and ICO files that get embedded"
+run = "python3 tools/make-icon.py"

@@ -1,0 +1,771 @@
+import { Button, LineEdit, ListView, CheckBox, Palette } from "std-widgets.slint";
+
+export struct Row {
+    // Index of the finding, or -1 for a group header.
+    id: int,
+    header: bool,
+    kind: int,
+    title: string,
+    subtitle: string,
+    // 0 open, 1 new, 2 fixed
+    status: int,
+    dismissed: bool,
+    count: int,
+    note: string,
+}
+
+global Theme {
+    out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+    out property <color> panel: dark ? #1f2125 : #f5f6f8;
+    out property <color> line: dark ? #3a3d44 : #d9dce1;
+    out property <color> dim: dark ? #9aa0aa : #666c76;
+    out property <color> selected: dark ? #2c4a73 : #d6e6fb;
+    out property <color> hover: dark ? #2a2d33 : #eaedf1;
+    out property <color> mark: dark ? #5c4a12 : #fff0b3;
+    out property <color> new: dark ? #e0913a : #c25e00;
+    out property <color> fixed: dark ? #55b86b : #1f8a3b;
+    out property <color> open: dark ? #7fa7e0 : #2f64b5;
+    in property <string> mono: "DejaVu Sans Mono";
+}
+
+component Badge inherits Rectangle {
+    in property <string> text;
+    in property <color> tone;
+    height: 16px;
+    width: label.preferred-width + 10px;
+    border-radius: 3px;
+    border-width: 1px;
+    border-color: tone;
+    label := Text {
+        text: root.text;
+        color: root.tone;
+        font-size: 10px;
+        font-weight: 600;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+}
+
+component LinkButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+    width: label.preferred-width + 12px;
+    height: 22px;
+    border-radius: 3px;
+    background: touch.has-hover ? Theme.line : transparent;
+    label := Text {
+        text: root.text;
+        color: Theme.dim;
+        font-size: 12px;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component Link inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+    width: label.preferred-width;
+    height: 22px;
+    label := Text {
+        text: root.text;
+        color: Theme.open;
+        vertical-alignment: center;
+    }
+
+    Rectangle {
+        y: parent.height - 3px;
+        height: 1px;
+        background: Theme.open;
+        opacity: touch.has-hover ? 1 : 0;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SourceView inherits Rectangle {
+    in property <string> heading;
+    in property <string> file;
+    in property <[string]> lines;
+    // 1-based line to highlight, 0 for none.
+    in property <int> current;
+    in property <int> longest;
+    property <length> row-height: 17px;
+    property <length> char-width: probe.preferred-width / 10;
+    property <length> gutter: 54px;
+
+    // Brings a line into view, a third down from the top, and scrolls
+    // sideways so that the start of its text is visible.
+    public function show(line: int, indent: int) {
+        list.content-y = min(0px, max(list.visible-height - list.content-height, list.visible-height / 3 - (line - 1) * root.row-height));
+        list.content-x = min(0px, max(list.visible-width - list.content-width, (4 - indent) * root.char-width));
+    }
+
+    background: Palette.background;
+    border-width: 1px;
+    border-color: Theme.line;
+    // Both views share the space equally, whatever their headings say.
+    preferred-width: 100px;
+    horizontal-stretch: 1;
+
+    // Measures the width of ten characters. Kept transparent rather than
+    // invisible so that it still reports a size.
+    probe := Text {
+        opacity: 0;
+        x: 0;
+        y: 0;
+        text: "0000000000";
+        font-family: Theme.mono;
+        font-size: 12px;
+    }
+
+    VerticalLayout {
+        padding: 1px;
+        Rectangle {
+            height: 26px;
+            background: Theme.panel;
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 8px;
+                Text {
+                    text: root.heading;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: root.file;
+                    color: Theme.dim;
+                    overflow: elide;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                Text {
+                    text: root.current > 0 ? "line " + root.current : "";
+                    color: Theme.dim;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        list := ListView {
+            // Wide enough for the longest line, so the view scrolls sideways.
+            content-width: max(self.visible-width, root.gutter + (root.longest + 2) * root.char-width);
+            for text[i] in root.lines: Rectangle {
+                height: root.row-height;
+                // The highlight and the line number stay in place while the
+                // text scrolls sideways.
+                Rectangle {
+                    x: -list.content-x;
+                    width: list.visible-width;
+                    background: i + 1 == root.current ? Theme.mark : transparent;
+                }
+
+                Text {
+                    x: root.gutter;
+                    height: parent.height;
+                    text: text;
+                    font-family: Theme.mono;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    x: -list.content-x;
+                    width: root.gutter - 4px;
+                    background: i + 1 == root.current ? Theme.mark : Palette.background;
+                    Text {
+                        width: parent.width - 6px;
+                        height: parent.height;
+                        text: i + 1;
+                        color: Theme.dim;
+                        font-family: Theme.mono;
+                        font-size: 12px;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "Xenomorph";
+    icon: @image-url("../assets/icon-256.png");
+    preferred-width: 1400px;
+    preferred-height: 860px;
+    min-width: 900px;
+    min-height: 560px;
+    background: Palette.background;
+
+    in-out property <string> ref-path;
+    in-out property <string> cand-path;
+    in property <string> ref-name;
+    in property <string> cand-name;
+    in property <string> ref-error;
+    in property <string> cand-error;
+    in property <string> mono-font <=> Theme.mono;
+
+    in property <[Row]> rows;
+    in property <int> selected: -1;
+    in property <string> summary;
+    in property <string> watch-status;
+    in property <bool> has-changes;
+    in-out property <bool> show-fixed: true;
+    in-out property <bool> show-dismissed: false;
+
+    in property <string> detail-title;
+    in property <string> detail-kind;
+    in property <string> detail-path;
+    in property <string> detail-summary;
+    in property <string> detail-note;
+    in property <int> detail-status;
+    in property <bool> detail-dismissed;
+    in property <[string]> detail-items;
+    in property <int> detail-item: 0;
+    in property <int> detail-count: 0;
+
+    in property <[string]> ref-lines;
+    in property <[string]> cand-lines;
+    in property <int> ref-line;
+    in property <int> cand-line;
+    in property <int> ref-longest;
+    in property <int> cand-longest;
+
+    in property <string> app-version;
+    in-out property <bool> about-open: false;
+    callback open-url(string);
+    callback browse(int);
+    callback path-accepted(int, string);
+    callback select(int);
+    callback dismiss(int);
+    callback dismiss-kind(int);
+    callback step(int);
+    callback select-item(int);
+    callback recheck();
+    callback accept-baseline();
+    callback filters-changed();
+
+    public function show-ref(line: int, indent: int) {
+        ref-view.show(line, indent);
+    }
+
+    public function show-cand(line: int, indent: int) {
+        cand-view.show(line, indent);
+    }
+
+    VerticalLayout {
+        // ---- files -------------------------------------------------------
+        Rectangle {
+            background: Theme.panel;
+            VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+                HorizontalLayout {
+                    spacing: 16px;
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Text {
+                            text: "Reference";
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            width: 70px;
+                        }
+
+                        LineEdit {
+                            text <=> root.ref-path;
+                            placeholder-text: "Known-good XML file";
+                            accepted(t) => {
+                                root.path-accepted(0, t);
+                            }
+                        }
+
+                        Button {
+                            text: "Browse…";
+                            clicked => {
+                                root.browse(0);
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Text {
+                            text: "Candidate";
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            width: 70px;
+                        }
+
+                        LineEdit {
+                            text <=> root.cand-path;
+                            placeholder-text: "XML file to check";
+                            accepted(t) => {
+                                root.path-accepted(1, t);
+                            }
+                        }
+
+                        Button {
+                            text: "Browse…";
+                            clicked => {
+                                root.browse(1);
+                            }
+                        }
+                    }
+                }
+
+                if root.ref-error != "" || root.cand-error != "": Text {
+                    text: root.ref-error != "" ? root.ref-error : root.cand-error;
+                    color: #d04444;
+                    wrap: word-wrap;
+                }
+
+                HorizontalLayout {
+                    spacing: 14px;
+                    Text {
+                        text: root.summary;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        text: root.watch-status;
+                        color: Theme.dim;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+
+                    CheckBox {
+                        text: "Show fixed";
+                        checked <=> root.show-fixed;
+                        toggled => {
+                            root.filters-changed();
+                        }
+                    }
+
+                    CheckBox {
+                        text: "Show dismissed";
+                        checked <=> root.show-dismissed;
+                        toggled => {
+                            root.filters-changed();
+                        }
+                    }
+
+                    Button {
+                        text: "Check again";
+                        clicked => {
+                            root.recheck();
+                        }
+                    }
+
+                    Button {
+                        text: "Accept as baseline";
+                        enabled: root.has-changes;
+                        clicked => {
+                            root.accept-baseline();
+                        }
+                    }
+
+                    Button {
+                        text: "About";
+                        clicked => {
+                            root.about-open = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.line;
+        }
+
+        HorizontalLayout {
+            // ---- findings ------------------------------------------------
+            Rectangle {
+                width: 430px;
+                if root.rows.length == 0: Text {
+                    text: root.ref-path == "" || root.cand-path == "" ? "Choose a reference and a candidate file." : root.summary == "" ? "" : "Nothing to show.";
+                    color: Theme.dim;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                ListView {
+                    for row in root.rows: Rectangle {
+                        height: row.header ? 34px : 50px;
+                        background: row.header ? Theme.panel : row.id == root.selected ? Theme.selected : touch.has-hover ? Theme.hover : transparent;
+                        touch := TouchArea {
+                            enabled: !row.header;
+                            clicked => {
+                                root.select(row.id);
+                            }
+                        }
+
+                        if row.header: HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 6px;
+                            spacing: 8px;
+                            Text {
+                                text: row.title;
+                                font-weight: 700;
+                                font-size: 12px;
+                                color: row.dismissed ? Theme.dim : Palette.foreground;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: row.count;
+                                color: Theme.dim;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                LinkButton {
+                                    text: row.dismissed ? "Restore all" : "Dismiss all";
+                                    clicked => {
+                                        root.dismiss-kind(row.kind);
+                                    }
+                                }
+                            }
+                        }
+                        if !row.header: HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 6px;
+                            spacing: 8px;
+                            Rectangle {
+                                width: 3px;
+                                Rectangle {
+                                    y: 8px;
+                                    height: parent.height - 16px;
+                                    border-radius: 1.5px;
+                                    background: row.dismissed ? Theme.line : row.status == 1 ? Theme.new : row.status == 2 ? Theme.fixed : Theme.open;
+                                }
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 3px;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: row.title;
+                                    overflow: elide;
+                                    color: row.dismissed || row.status == 2 ? Theme.dim : Palette.foreground;
+                                }
+
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    if row.status == 1 && !row.dismissed: Badge {
+                                        text: "NEW";
+                                        tone: Theme.new;
+                                    }
+                                    if row.status == 2: Badge {
+                                        text: "FIXED";
+                                        tone: Theme.fixed;
+                                    }
+                                    if row.dismissed: Badge {
+                                        text: "DISMISSED";
+                                        tone: Theme.dim;
+                                    }
+                                    if row.note != "": Badge {
+                                        text: row.note;
+                                        tone: Theme.fixed;
+                                    }
+                                    Text {
+                                        text: row.subtitle;
+                                        color: Theme.dim;
+                                        font-size: 11px;
+                                        overflow: elide;
+                                        horizontal-stretch: 1;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            if row.status != 2: VerticalLayout {
+                                alignment: center;
+                                LinkButton {
+                                    text: row.dismissed ? "Restore" : "Dismiss";
+                                    clicked => {
+                                        root.dismiss(row.id);
+                                    }
+                                }
+                            }
+                        }
+                        Rectangle {
+                            y: parent.height - 1px;
+                            height: 1px;
+                            background: Theme.line;
+                            opacity: 0.6;
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                width: 1px;
+                background: Theme.line;
+            }
+
+            // ---- detail and sources --------------------------------------
+            VerticalLayout {
+                horizontal-stretch: 1;
+                if root.selected >= 0: Rectangle {
+                    background: Theme.panel;
+                    vertical-stretch: 0;
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 6px;
+                        alignment: start;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text {
+                                text: root.detail-kind;
+                                color: Theme.dim;
+                                font-size: 11px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+
+                            if root.detail-status == 1: Badge {
+                                text: "NEW";
+                                tone: Theme.new;
+                            }
+                            if root.detail-status == 2: Badge {
+                                text: "FIXED";
+                                tone: Theme.fixed;
+                            }
+                            if root.detail-dismissed: Badge {
+                                text: "DISMISSED";
+                                tone: Theme.dim;
+                            }
+                            if root.detail-note != "": Badge {
+                                text: root.detail-note;
+                                tone: Theme.fixed;
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                            }
+                        }
+
+                        Text {
+                            text: root.detail-title;
+                            font-size: 15px;
+                            font-weight: 600;
+                            wrap: word-wrap;
+                        }
+
+                        if root.detail-path != "": Text {
+                            text: root.detail-path;
+                            color: Theme.dim;
+                            font-family: Theme.mono;
+                            font-size: 11px;
+                            wrap: char-wrap;
+                        }
+                        if root.detail-summary != "": Text {
+                            text: root.detail-summary;
+                            wrap: word-wrap;
+                        }
+                        if root.detail-status == 2: Text {
+                            text: "This finding was in the baseline and is gone now. The lines shown are from the baseline and may have moved.";
+                            color: Theme.dim;
+                            wrap: word-wrap;
+                        }
+                        if root.detail-count > 1: Rectangle {
+                            height: min(132px, root.detail-count * 22px);
+                            border-width: 1px;
+                            border-color: Theme.line;
+                            background: Palette.background;
+                            ListView {
+                                for text[i] in root.detail-items: Rectangle {
+                                    height: 22px;
+                                    background: i == root.detail-item ? Theme.selected : item-touch.has-hover ? Theme.hover : transparent;
+                                    item-touch := TouchArea {
+                                        clicked => {
+                                            root.select-item(i);
+                                        }
+                                    }
+
+                                    Text {
+                                        x: 8px;
+                                        width: parent.width - 16px;
+                                        height: parent.height;
+                                        text: text;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                        font-size: 12px;
+                                    }
+                                }
+                            }
+                        }
+                        if root.detail-count > 1: HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            Button {
+                                text: "◀ Previous";
+                                clicked => {
+                                    root.step(-1);
+                                }
+                            }
+
+                            Text {
+                                text: (root.detail-item + 1) + " of " + root.detail-count;
+                                color: Theme.dim;
+                                vertical-alignment: center;
+                            }
+
+                            Button {
+                                text: "Next ▶";
+                                clicked => {
+                                    root.step(1);
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.selected >= 0: Rectangle {
+                    height: 1px;
+                    background: Theme.line;
+                }
+                HorizontalLayout {
+                    vertical-stretch: 1;
+                    padding: 8px;
+                    spacing: 8px;
+                    ref-view := SourceView {
+                        heading: "Reference";
+                        file: root.ref-name;
+                        lines: root.ref-lines;
+                        current: root.ref-line;
+                        longest: root.ref-longest;
+                    }
+
+                    cand-view := SourceView {
+                        heading: "Candidate";
+                        file: root.cand-name;
+                        lines: root.cand-lines;
+                        current: root.cand-line;
+                        longest: root.cand-longest;
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- about -----------------------------------------------------------
+    if root.about-open: Rectangle {
+        background: #00000080;
+        TouchArea {
+            clicked => {
+                root.about-open = false;
+            }
+        }
+
+        Rectangle {
+            width: 380px;
+            height: card.preferred-height;
+            background: Palette.background;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Theme.line;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000060;
+            // Clicks on the card do not close it.
+            TouchArea { }
+
+            card := VerticalLayout {
+                padding: 24px;
+                spacing: 6px;
+                alignment: start;
+                HorizontalLayout {
+                    alignment: center;
+                    Image {
+                        source: @image-url("../assets/icon-256.png");
+                        width: 88px;
+                        height: 88px;
+                    }
+                }
+
+                Text {
+                    text: "Xenomorph";
+                    font-size: 22px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "Spots the foreign shapes in your XML.";
+                    color: Theme.dim;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "Version " + root.app-version;
+                    color: Theme.dim;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                }
+
+                Rectangle {
+                    height: 10px;
+                }
+
+                Text {
+                    text: "Built by Claude, credit taken by Julian Kurz";
+                    horizontal-alignment: center;
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    Link {
+                        text: "j8z.dev";
+                        clicked => {
+                            root.open-url("https://j8z.dev");
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    Link {
+                        text: "github.com/j8zdev/xenomorph";
+                        clicked => {
+                            root.open-url("https://github.com/j8zdev/xenomorph");
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 10px;
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    Button {
+                        text: "Close";
+                        clicked => {
+                            root.about-open = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
