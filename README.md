@@ -111,3 +111,7 @@ renders the PNG and ICO files that are embedded in the binaries.
 - `src/main.rs` and `ui/app.slint` are the window ([Slint](https://slint.dev)).
 
 Built by Claude, credit taken by [Julian Kurz](https://j8z.dev).
+
+## Licence
+
+[MIT](LICENSE)

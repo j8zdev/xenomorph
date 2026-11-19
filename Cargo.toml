@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Spots the foreign shapes in your XML: compares the shape of two XML files and lists the differences as findings"
 authors = ["Julian Kurz"]
+license = "MIT"
 homepage = "https://j8z.dev"
 repository = "https://github.com/j8zdev/xenomorph"
 
